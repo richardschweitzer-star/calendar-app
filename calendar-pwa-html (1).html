@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Calendar">
+  <meta name="theme-color" content="#09090b">
+  <title>Calendar App</title>
+  
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Firebase -->
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      overflow: hidden;
+      background: #09090b;
+      color: white;
+      overscroll-behavior: none;
+    }
+    
+    #root {
+      width: 100vw;
+      height: 100vh;
+      overflow-x: hidden;
+      overscroll-behavior-x: none;
+    }
+
+    input[type="time"]::-webkit-calendar-picker-indicator,
+    input[type="date"]::-webkit-calendar-picker-indicator {
+      filter: invert(1);
+    }
+
+    .fade-in {
+      animation: fadeIn 0.2s ease-in;
+    }
+
+    .slide-up {
+      animation: slideUp 0.3s ease-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect } = React;
+    
+    // Initialize Firebase
+    const firebaseConfig = {
+      apiKey: "AIzaSyDXxXn2mzKnokW_jXwZ4_oodRX8S5JoANU",
+      authDomain: "calendar-app-c94eb.firebaseapp.com",
+      projectId: "calendar-app-c94eb",
+      storageBucket: "calendar-app-c94eb.firebasestorage.app",
+      messagingSenderId: "711455886888",
+      appId: "1:711455886888:web:785cb305772b228808af1d"
+    };
+    
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    
+    // Generate or get user ID
+    const getUserId = () => {
+      let userId = localStorage.getItem('userId');
+      if (!userId) {
+        userId = 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        localStorage.setItem('userId', userId);
+      }
+      return userId;
+    };
+    
+    const userId = getUserId();
+    
+    const ChevronLeft = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="15 18 9 12 15 6"></polyline>
+      </svg>
+    );
+    
+    const ChevronRight = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="9 18 15 12 9 6"></polyline>
+      </svg>
+    );
+    
+    const Plus = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+      </svg>
+    );
+    
+    const X = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+      </svg>
+    );
+    
+    const Edit2 = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"></path>
+      </svg>
+    );
+    
+    const Trash2 = ({ size = 24 }) => (
+      <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="3 6 5 6 21 6"></polyline>
+        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+        <line x1="10" y1="11" x2="10" y2="17"></line>
+        <line x1="14" y1="11" x2="14" y2="17"></line>
+      </svg>
+    );
+
+    const CalendarApp = () => {
+      const [currentDate, setCurrentDate] = useState(new Date());
+      const [events, setEvents] = useState([]);
+      const [showEventModal, setShowEventModal] = useState(false);
+      const [selectedDate, setSelectedDate] = useState(null);
+      const [editingEvent, setEditingEvent] = useState(null);
+      const [showDayView, setShowDayView] = useState(false);
+      const [dayViewDate, setDayViewDate] = useState(null);
+      const [eventForm, setEventForm] = useState({
+        title: '',
+        startTime: '09:00',
+        endTime: '10:00',
+        color: 'blue',
+        description: '',
+        recurring: false,
+        recurrence: {
+          frequency: 'daily',
+          interval: 1,
+          daysOfWeek: [],
+          endDate: null
+        }
+      });
+      const [draggingEvent, setDraggingEvent] = useState(null);
+      const [dragStartY, setDragStartY] = useState(0);
+      const [dragStartTime, setDragStartTime] = useState(null);
+      const [holdTimer, setHoldTimer] = useState(null);
+      const [isHolding, setIsHolding] = useState(false);
+      const [hasDragged, setHasDragged] = useState(false);
+      const [scrollEnabled, setScrollEnabled] = useState(true);
+      const [currentTime, setCurrentTime] = useState(new Date());
+      const [hasScrolled, setHasScrolled] = useState(false);
+      const [showColorPicker, setShowColorPicker] = useState(false);
+      const [customColor, setCustomColor] = useState('#4a90e2');
+
+      useEffect(() => {
+        // Load events from Firestore with real-time sync
+        const unsubscribe = db.collection('events')
+          .where('userId', '==', userId)
+          .onSnapshot((snapshot) => {
+            const firestoreEvents = [];
+            snapshot.forEach((doc) => {
+              firestoreEvents.push({ ...doc.data(), firestoreId: doc.id });
+            });
+            setEvents(firestoreEvents);
+          }, (error) => {
+            console.error('Error loading events:', error);
+            // Fallback to localStorage if Firebase fails
+            try {
+              const saved = localStorage.getItem('calendarEvents');
+              if (saved) setEvents(JSON.parse(saved));
+            } catch (e) {}
+          });
+        
+        // Request notification permission
+        if ('Notification' in window) {
+          if (Notification.permission === 'default') {
+            Notification.requestPermission().then(permission => {
+              if (permission === 'granted') {
+                new Notification('Calendar App', {
+                  body: 'Cloud sync enabled! Your events will sync across all devices.',
+                  icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="80" font-size="80">📅</text></svg>'
+                });
+              }
+            });
+          }
+        }
+
+        // Try to request calendar access (iOS)
+        if (window.calendar && window.calendar.requestReadWritePermission) {
+          window.calendar.requestReadWritePermission().then(() => {
+            syncWithAppleCalendar();
+          }).catch(e => console.log('Calendar permission denied'));
+        }
+        
+        return () => unsubscribe();
+      }, []);
+
+      useEffect(() => {
+        // Backup to localStorage
+        try {
+          localStorage.setItem('calendarEvents', JSON.stringify(events));
+        } catch (e) {}
+        
+        // Schedule notifications
+        scheduleNotifications();
+      }, [events]);
+
+      useEffect(() => {
+        // Update current time every minute
+        const timer = setInterval(() => {
+          setCurrentTime(new Date());
+        }, 60000); // Update every minute
+        
+        return () => clearInterval(timer);
+      }, []);
+
+      const scheduleNotifications = () => {
+        const existingTimers = JSON.parse(localStorage.getItem('notificationTimers') || '[]');
+        existingTimers.forEach(timerId => clearTimeout(timerId));
+        
+        const newTimers = [];
+        const now = new Date();
+        
+        for (let i = 0; i < 2; i++) {
+          const checkDate = new Date(now);
+          checkDate.setDate(checkDate.getDate() + i);
+          
+          const dayEvents = getEventsForDate(checkDate);
+          
+          dayEvents.forEach(event => {
+            const [hours, minutes] = event.startTime.split(':').map(Number);
+            const eventDate = new Date(checkDate);
+            eventDate.setHours(hours, minutes, 0, 0);
+            
+            const notificationTime = new Date(eventDate.getTime() - 10 * 60 * 1000);
+            const timeUntilNotification = notificationTime - now;
+            
+            if (timeUntilNotification > 0 && timeUntilNotification < 48 * 60 * 60 * 1000) {
+              const timerId = setTimeout(() => {
+                if ('Notification' in window && Notification.permission === 'granted') {
+                  new Notification('Upcoming Event', {
+                    body: `${event.title} starts in 10 minutes (${event.startTime})`,
+                    icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text y="80" font-size="80">📅</text></svg>',
+                    tag: `event-${event.id}`,
+                    requireInteraction: false
+                  });
+                }
+                
+                // Also try to add to Apple Calendar for native notifications
+                addToAppleCalendar(event, checkDate);
+              }, timeUntilNotification);
+              
+              newTimers.push(timerId);
+            }
+          });
+        }
+        
+        localStorage.setItem('notificationTimers', JSON.stringify(newTimers));
+      };
+
+      const syncWithAppleCalendar = () => {
+        // This is a placeholder - iOS Calendar sync requires native bridge
+        // For now, we'll store a flag that indicates calendar integration is desired
+        localStorage.setItem('calendarSyncEnabled', 'true');
+      };
+
+      const addToAppleCalendar = (event, date) => {
+        // Try to create iOS calendar event using webcal: protocol
+        if (event.title) {
+          const [startH, startM] = event.startTime.split(':').map(Number);
+          const [endH, endM] = event.endTime.split(':').map(Number);
+          
+          const startDate = new Date(date);
+          startDate.setHours(startH, startM, 0);
+          
+          const endDate = new Date(date);
+          endDate.setHours(endH, endM, 0);
+          
+          // Store event details for potential calendar sync
+          const calendarEvent = {
+            title: event.title,
+            startDate: startDate.toISOString(),
+            endDate: endDate.toISOString(),
+            notes: event.description || ''
+          };
+          
+          const existingCalEvents = JSON.parse(localStorage.getItem('calendarEvents') || '[]');
+          existingCalEvents.push(calendarEvent);
+          localStorage.setItem('appleCalendarSync', JSON.stringify(existingCalEvents));
+        }
+      };
+
+      const colors = {
+        blue: { base: '#4a90e2', light: '#5fa3f5', text: '#ffffff' },
+        green: { base: '#2dd36f', light: '#42e083', text: '#ffffff' },
+        red: { base: '#f25c54', light: '#f77066', text: '#ffffff' },
+        gold: { base: '#ffc409', light: '#ffd31a', text: '#ffffff' },
+        pink: { base: '#eb5eb8', light: '#f070c4', text: '#ffffff' },
+        white: { base: '#fafafa', light: '#ffffff', text: '#1f2937' },
+        dark: { base: '#5a6978', light: '#6b7a89', text: '#ffffff' },
+        custom: { base: customColor, light: lightenColor(customColor, 20), text: isLightColor(customColor) ? '#1f2937' : '#ffffff' }
+      };
+
+      function hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+          r: parseInt(result[1], 16),
+          g: parseInt(result[2], 16),
+          b: parseInt(result[3], 16)
+        } : null;
+      }
+
+      function rgbToHex(r, g, b) {
+        return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+      }
+
+      function lightenColor(hex, percent) {
+        const rgb = hexToRgb(hex);
+        if (!rgb) return hex;
+        
+        const r = Math.min(255, Math.floor(rgb.r + (255 - rgb.r) * (percent / 100)));
+        const g = Math.min(255, Math.floor(rgb.g + (255 - rgb.g) * (percent / 100)));
+        const b = Math.min(255, Math.floor(rgb.b + (255 - rgb.b) * (percent / 100)));
+        
+        return rgbToHex(r, g, b);
+      }
+
+      function darkenColor(hex, percent) {
+        const rgb = hexToRgb(hex);
+        if (!rgb) return hex;
+        
+        const r = Math.floor(rgb.r * (1 - percent / 100));
+        const g = Math.floor(rgb.g * (1 - percent / 100));
+        const b = Math.floor(rgb.b * (1 - percent / 100));
+        
+        return rgbToHex(r, g, b);
+      }
+
+      function isLightColor(hex) {
+        const rgb = hexToRgb(hex);
+        if (!rgb) return false;
+        const brightness = (rgb.r * 299 + rgb.g * 587 + rgb.b * 114) / 1000;
+        return brightness > 155;
+      }
+
+      const getDaysInMonth = (date) => {
+        const year = date.getFullYear();
+        const month = date.getMonth();
+        const firstDay = new Date(year, month, 1);
+        const lastDay = new Date(year, month + 1, 0);
+        return { 
+          daysInMonth: lastDay.getDate(), 
+          startingDayOfWeek: firstDay.getDay(), 
+          year, 
+          month 
+        };
+      };
+
+      const formatDate = (date) => date.toISOString().split('T')[0];
+
+      const getEventsForDate = (date) => {
+        const dateStr = formatDate(date);
+        const directEvents = events.filter(event => event.date === dateStr);
+        const recurringEvents = [];
+        const addedIds = new Set(directEvents.map(e => e.id));
+        
+        events.forEach(event => {
+          if (event.recurring && event.recurrence && !addedIds.has(event.id)) {
+            const eventDate = new Date(event.date);
+            const checkDate = new Date(date);
+            
+            if (event.recurrence.endDate && checkDate > new Date(event.recurrence.endDate)) return;
+            if (checkDate < eventDate) return;
+            
+            const daysDiff = Math.floor((checkDate - eventDate) / (1000 * 60 * 60 * 24));
+            
+            if (event.recurrence.frequency === 'daily') {
+              if (daysDiff % event.recurrence.interval === 0) {
+                recurringEvents.push({ ...event, id: `${event.id}-${dateStr}`, isRecurringInstance: true });
+              }
+            } else if (event.recurrence.frequency === 'weekly') {
+              const dayOfWeek = checkDate.getDay();
+              const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+              if (event.recurrence.daysOfWeek?.includes(dayNames[dayOfWeek]) && daysDiff % (7 * event.recurrence.interval) < 7) {
+                recurringEvents.push({ ...event, id: `${event.id}-${dateStr}`, isRecurringInstance: true });
+              }
+            }
+          }
+        });
+        
+        return [...directEvents, ...recurringEvents];
+      };
+
+      const handlePrevMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1));
+      const handleNextMonth = () => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
+      const handleToday = () => setCurrentDate(new Date());
+
+      const handleDateClick = (day) => {
+        setDayViewDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day));
+        setShowDayView(true);
+      };
+
+      const handleTimeSlotClick = (hour) => {
+        setSelectedDate(dayViewDate);
+        setEditingEvent(null);
+        setEventForm({
+          title: '',
+          startTime: `${String(hour).padStart(2, '0')}:00`,
+          endTime: `${String(hour + 1).padStart(2, '0')}:00`,
+          color: 'blue',
+          description: '',
+          recurring: false,
+          recurrence: { frequency: 'daily', interval: 1, daysOfWeek: [], endDate: null }
+        });
+        setShowEventModal(true);
+      };
+
+      const handleSaveEvent = async () => {
+        if (!eventForm.title) return;
+        const dateToUse = selectedDate || dayViewDate;
+
+        if (editingEvent) {
+          // Update existing event in Firestore
+          const updatedEvent = { ...editingEvent, ...eventForm };
+          try {
+            if (updatedEvent.firestoreId) {
+              await db.collection('events').doc(updatedEvent.firestoreId).update({
+                title: eventForm.title,
+                startTime: eventForm.startTime,
+                endTime: eventForm.endTime,
+                color: eventForm.color,
+                customColor: eventForm.color === 'custom' ? (eventForm.customColor || customColor) : null,
+                description: eventForm.description,
+                recurring: eventForm.recurring,
+                recurrence: eventForm.recurrence
+              });
+            }
+          } catch (error) {
+            console.error('Error updating event:', error);
+          }
+        } else {
+          // Create new event in Firestore
+          const newEvent = {
+            userId: userId,
+            id: Date.now(),
+            date: formatDate(dateToUse),
+            title: eventForm.title,
+            startTime: eventForm.startTime,
+            endTime: eventForm.endTime,
+            color: eventForm.color,
+            customColor: eventForm.color === 'custom' ? (eventForm.customColor || customColor) : null,
+            description: eventForm.description,
+            recurring: eventForm.recurring,
+            recurrence: eventForm.recurrence,
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          };
+          
+          try {
+            await db.collection('events').add(newEvent);
+          } catch (error) {
+            console.error('Error creating event:', error);
+          }
+        }
+        
+        setShowEventModal(false);
+        setEditingEvent(null);
+        setShowColorPicker(false);
+      };
+
+      const handleEditEvent = (event, e) => {
+        e.stopPropagation();
+        const baseEvent = event.isRecurringInstance ? events.find(ev => ev.id === parseInt(event.id.split('-')[0])) : event;
+        if (!baseEvent) return;
+        
+        setEditingEvent(baseEvent);
+        setEventForm({
+          title: baseEvent.title,
+          startTime: baseEvent.startTime,
+          endTime: baseEvent.endTime,
+          color: baseEvent.color,
+          description: baseEvent.description || '',
+          recurring: baseEvent.recurring || false,
+          recurrence: baseEvent.recurrence || { frequency: 'daily', interval: 1, daysOfWeek: [], endDate: null }
+        });
+        setSelectedDate(new Date(baseEvent.date));
+        setShowEventModal(true);
+      };
+
+      const handleDeleteEvent = async (eventId, e) => {
+        e.stopPropagation();
+        const event = events.find(ev => ev.id === eventId || ev.firestoreId === eventId);
+        
+        if (event && event.firestoreId) {
+          try {
+            await db.collection('events').doc(event.firestoreId).delete();
+          } catch (error) {
+            console.error('Error deleting event:', error);
+          }
+        } else {
+          // Fallback for local-only events
+          const idToDelete = typeof eventId === 'string' ? parseInt(eventId.split('-')[0]) : eventId;
+          setEvents(events.filter(e => e.id !== idToDelete));
+        }
+      };
+
+      const handleDragStart = (event, e) => {
+        const touch = e.touches ? e.touches[0] : e;
+        setDragStartY(touch.clientY);
+        setHasDragged(false);
+        setHasScrolled(false);
+        
+        const timer = setTimeout(() => {
+          if (!hasScrolled) {
+            setIsHolding(true);
+            setDraggingEvent(event);
+            setScrollEnabled(false);
+            const [hours, minutes] = event.startTime.split(':').map(Number);
+            setDragStartTime(hours * 60 + minutes);
+          }
+        }, 1000);
+        
+        setHoldTimer(timer);
+      };
+
+      const handleDragMove = async (e) => {
+        if (!draggingEvent || !isHolding) return;
+        e.preventDefault();
+        setHasDragged(true);
+        
+        const touch = e.touches ? e.touches[0] : e;
+        const deltaY = touch.clientY - dragStartY;
+        const minutesMoved = Math.round((deltaY / 80) * 60 / 5) * 5;
+        
+        const newStartMinutes = Math.max(0, Math.min(1435, dragStartTime + minutesMoved));
+        const newStartHours = Math.floor(newStartMinutes / 60);
+        const newStartMins = newStartMinutes % 60;
+        
+        const [oldEndHours, oldEndMins] = draggingEvent.endTime.split(':').map(Number);
+        const [oldStartHours, oldStartMins] = draggingEvent.startTime.split(':').map(Number);
+        const duration = (oldEndHours * 60 + oldEndMins) - (oldStartHours * 60 + oldStartMins);
+        
+        const newEndMinutes = newStartMinutes + duration;
+        const newEndHours = Math.floor(newEndMinutes / 60);
+        const newEndMins = newEndMinutes % 60;
+        
+        if (newEndHours < 24) {
+          const newStartTime = `${String(newStartHours).padStart(2, '0')}:${String(newStartMins).padStart(2, '0')}`;
+          const newEndTime = `${String(newEndHours).padStart(2, '0')}:${String(newEndMins).padStart(2, '0')}`;
+          
+          // Update in Firestore
+          if (draggingEvent.firestoreId) {
+            try {
+              await db.collection('events').doc(draggingEvent.firestoreId).update({
+                startTime: newStartTime,
+                endTime: newEndTime
+              });
+            } catch (error) {
+              console.error('Error updating event time:', error);
+            }
+          } else {
+            // Fallback for local events
+            setEvents(events.map(ev => 
+              ev.id === draggingEvent.id ? {
+                ...ev,
+                startTime: newStartTime,
+                endTime: newEndTime
+              } : ev
+            ));
+          }
+        }
+      };
+
+      const handleDragEnd = (event) => {
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          setHoldTimer(null);
+        }
+        
+        if (!hasDragged && !isHolding && !hasScrolled) {
+          // It was just a tap, open edit modal
+          handleEditEvent(event, { stopPropagation: () => {} });
+        }
+        
+        setDraggingEvent(null);
+        setDragStartY(0);
+        setDragStartTime(null);
+        setIsHolding(false);
+        setHasDragged(false);
+        setHasScrolled(false);
+        setScrollEnabled(true);
+      };
+
+      const handleTouchCancel = () => {
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          setHoldTimer(null);
+        }
+        setIsHolding(false);
+        setDraggingEvent(null);
+        setScrollEnabled(true);
+        setHasScrolled(false);
+      };
+
+      const handleScroll = () => {
+        setHasScrolled(true);
+        if (holdTimer) {
+          clearTimeout(holdTimer);
+          setHoldTimer(null);
+        }
+      };
+
+      const getEventPosition = (startTime, endTime) => {
+        const [startHour, startMin] = startTime.split(':').map(Number);
+        const [endHour, endMin] = endTime.split(':').map(Number);
+        const startMinutes = startHour * 60 + startMin;
+        const endMinutes = endHour * 60 + endMin;
+        return { 
+          top: (startMinutes / 60) * 80, 
+          height: Math.max(((endMinutes - startMinutes) / 60) * 80, 40) 
+        };
+      };
+
+      const organizeOverlappingEvents = (dateEvents) => {
+        if (dateEvents.length === 0) return [];
+        
+        const sorted = [...dateEvents].sort((a, b) => {
+          const aStart = a.startTime.split(':').map(Number);
+          const bStart = b.startTime.split(':').map(Number);
+          return (aStart[0] * 60 + aStart[1]) - (bStart[0] * 60 + bStart[1]);
+        });
+
+        const result = [];
+        
+        for (let i = 0; i < sorted.length; i++) {
+          const event = sorted[i];
+          const [startH, startM] = event.startTime.split(':').map(Number);
+          const [endH, endM] = event.endTime.split(':').map(Number);
+          const eventStart = startH * 60 + startM;
+          const eventEnd = endH * 60 + endM;
+          
+          let overlappingCount = 0;
+          let columnIndex = 0;
+          
+          for (let j = 0; j < i; j++) {
+            const otherEvent = sorted[j];
+            const [otherEndH, otherEndM] = otherEvent.endTime.split(':').map(Number);
+            const otherEnd = otherEndH * 60 + otherEndM;
+            
+            if (otherEnd > eventStart) {
+              overlappingCount++;
+              columnIndex = overlappingCount;
+            }
+          }
+          
+          result.push({
+            ...event,
+            column: columnIndex,
+            totalColumns: overlappingCount + 1,
+            hasOverlap: overlappingCount > 0
+          });
+        }
+        
+        return result;
+      };
+
+      const renderDayView = () => {
+        const hours = Array.from({ length: 25 }, (_, i) => i);
+        const organizedEvents = organizeOverlappingEvents(getEventsForDate(dayViewDate));
+        
+        // Calculate current time line position (only if viewing today)
+        const today = new Date();
+        const viewingDate = new Date(dayViewDate);
+        const isToday = viewingDate.toDateString() === today.toDateString();
+        const currentMinutes = today.getHours() * 60 + today.getMinutes();
+        const currentTimeTop = (currentMinutes / 60) * 80;
+
+        return (
+          <div 
+            className="h-screen bg-zinc-950 flex flex-col text-white fade-in overflow-x-hidden"
+            onTouchMove={isHolding ? handleDragMove : undefined}
+            onTouchEnd={handleTouchCancel}
+            onMouseMove={isHolding ? handleDragMove : undefined}
+            onMouseUp={handleTouchCancel}
+            style={{ touchAction: scrollEnabled ? 'auto' : 'none' }}
+          >
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <button onClick={() => setShowDayView(false)} className="px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-all duration-200">Back</button>
+              <h1 className="text-lg font-semibold">{dayViewDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</h1>
+              <button onClick={() => handleTimeSlotClick(9)} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full transition-all duration-200">
+                <Plus size={24} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto overflow-x-hidden" style={{ overflowY: scrollEnabled ? 'auto' : 'hidden' }} onScroll={handleScroll}>
+              <div className="flex pt-2">
+                <div className="w-24 flex-shrink-0">
+                  {hours.map(h => (
+                    <div key={h} className="h-20 flex items-start justify-start pl-2 relative">
+                      <span className="text-xs text-zinc-500 -mt-2">
+                        {h === 24 ? '00:00' : `${String(h).padStart(2, '0')}:00`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex-1 relative">
+                  {hours.map(h => (
+                    <div 
+                      key={h} 
+                      className="h-20 border-t border-zinc-800 hover:bg-zinc-900/30 cursor-pointer transition-colors duration-150" 
+                      onClick={() => !isHolding && h < 24 && handleTimeSlotClick(h)}
+                    ></div>
+                  ))}
+                  
+                  {/* Current time indicator */}
+                  {isToday && (
+                    <div 
+                      className="absolute left-0 right-0 z-40 pointer-events-none"
+                      style={{ top: `${currentTimeTop}px` }}
+                    >
+                      <div className="flex items-center">
+                        <div className="w-3 h-3 bg-blue-500 rounded-full -ml-1.5 shadow-lg shadow-blue-500/50"></div>
+                        <div className="flex-1 h-0.5 bg-blue-500 shadow-sm"></div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="absolute inset-0 pointer-events-none">
+                    {organizedEvents.map(event => {
+                      const pos = getEventPosition(event.startTime, event.endTime);
+                      const width = event.hasOverlap ? 60 : 100;
+                      const left = event.column > 0 ? 40 : 0;
+                      const isDragging = draggingEvent?.id === event.id && isHolding;
+                      
+                      const eventColors = event.color === 'custom' 
+                        ? { base: event.customColor || customColor, light: lightenColor(event.customColor || customColor, 20), text: isLightColor(event.customColor || customColor) ? '#1f2937' : '#ffffff' }
+                        : colors[event.color];
+                      const stripeColor = darkenColor(eventColors.base, 15);
+                      
+                      return (
+                        <div 
+                          key={event.id} 
+                          className="absolute rounded-lg p-2 group pointer-events-auto cursor-move transition-all duration-200 hover:scale-[1.02] hover:z-10 select-none" 
+                          onTouchStart={(e) => handleDragStart(event, e)}
+                          onTouchEnd={() => handleDragEnd(event)}
+                          onMouseDown={(e) => handleDragStart(event, e)}
+                          onMouseUp={() => handleDragEnd(event)}
+                          style={{
+                            top: `${pos.top}px`, 
+                            height: `${pos.height}px`, 
+                            left: `${left}%`, 
+                            width: `${width}%`,
+                            background: `repeating-linear-gradient(45deg, ${eventColors.base}, ${eventColors.base} 8px, ${stripeColor} 8px, ${stripeColor} 16px)`,
+                            color: eventColors.text,
+                            opacity: isDragging ? 0.6 : 1,
+                            zIndex: isDragging ? 50 : 20
+                          }}
+                        >
+                          <div className="font-semibold text-sm">{event.title}</div>
+                          <div className="text-xs opacity-90">{event.startTime} - {event.endTime}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      const renderMonthView = () => {
+        const { daysInMonth, startingDayOfWeek, year, month } = getDaysInMonth(currentDate);
+        const days = [];
+        const today = new Date();
+        const isCurrentMonth = today.getMonth() === month && today.getFullYear() === year;
+
+        for (let i = 0; i < startingDayOfWeek; i++) {
+          days.push(<div key={`e-${i}`} className="aspect-square bg-zinc-900/50 border border-zinc-800"></div>);
+        }
+
+        for (let day = 1; day <= daysInMonth; day++) {
+          const date = new Date(year, month, day);
+          const dateEvents = getEventsForDate(date);
+          const isToday = isCurrentMonth && today.getDate() === day;
+
+          days.push(
+            <div 
+              key={day} 
+              onClick={() => handleDateClick(day)} 
+              className="aspect-square bg-zinc-900/50 border border-zinc-800 p-1 cursor-pointer hover:bg-zinc-800/50 transition-all duration-200 flex flex-col"
+            >
+              <div className={`text-xs mb-1 transition-all duration-200 ${isToday ? 'bg-blue-600 text-white rounded-full w-5 h-5 flex items-center justify-center font-semibold' : 'text-zinc-400'}`}>{day}</div>
+              <div className="space-y-0.5 flex-1 overflow-hidden">
+                {dateEvents.slice(0, 2).map(e => (
+                  <div 
+                    key={e.id} 
+                    className="text-xs p-0.5 rounded transition-all duration-200 hover:scale-[1.02]" 
+                    onClick={(ev) => { ev.stopPropagation(); setDayViewDate(date); handleEditEvent(e, ev); }}
+                    style={{
+                      background: `repeating-linear-gradient(45deg, ${colors[e.color].base}, ${colors[e.color].base} 10px, ${colors[e.color].light} 10px, ${colors[e.color].light} 20px)`,
+                      color: colors[e.color].text
+                    }}
+                  >
+                    <div className="font-medium truncate text-[10px]">{e.title}</div>
+                  </div>
+                ))}
+                {dateEvents.length > 2 && <div className="text-[10px] text-zinc-500">+{dateEvents.length - 2}</div>}
+              </div>
+            </div>
+          );
+        }
+        return days;
+      };
+
+      return (
+        <div className="min-h-screen bg-zinc-950 text-white overflow-x-hidden">
+          {showDayView ? renderDayView() : (
+            <>
+              <div className="flex items-center justify-between p-3 border-b border-zinc-800">
+                <div className="flex items-center gap-3">
+                  <button onClick={handleToday} className="px-3 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-sm transition-all duration-200">Today</button>
+                  <button onClick={handlePrevMonth} className="p-1.5 hover:bg-zinc-800 rounded-lg transition-all duration-200"><ChevronLeft size={20} /></button>
+                  <button onClick={handleNextMonth} className="p-1.5 hover:bg-zinc-800 rounded-lg transition-all duration-200"><ChevronRight size={20} /></button>
+                  <h1 className="text-lg font-semibold">{currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}</h1>
+                </div>
+                <button onClick={() => { setSelectedDate(new Date()); setEditingEvent(null); setShowEventModal(true); }} className="p-2 bg-zinc-800 hover:bg-zinc-700 rounded-full transition-all duration-200">
+                  <Plus size={24} />
+                </button>
+              </div>
+              <div className="p-2 overflow-x-hidden">
+                <div className="grid grid-cols-7 gap-px mb-px">
+                  {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="text-center text-xs font-semibold text-zinc-400 py-2">{d}</div>)}
+                </div>
+                <div className="grid grid-cols-7 gap-px">{renderMonthView()}</div>
+              </div>
+            </>
+          )}
+
+          {showEventModal && (
+            <div className="fixed inset-0 bg-black/70 flex items-end justify-center z-50 fade-in overflow-x-hidden" onClick={() => { setShowEventModal(false); setShowColorPicker(false); }}>
+              <div className="bg-zinc-900 rounded-t-2xl w-full max-w-md max-h-[85vh] overflow-y-auto overflow-x-hidden" onClick={e => e.stopPropagation()} style={{ overscrollBehaviorX: 'none', WebkitOverflowScrolling: 'touch' }}>
+                <div className="sticky top-0 bg-zinc-900 p-4 border-b border-zinc-800 flex justify-between items-center z-10">
+                  <h2 className="text-lg font-semibold">{editingEvent ? 'Edit' : 'New'} Event</h2>
+                  <button onClick={() => { setShowEventModal(false); setShowColorPicker(false); }} className="p-1 hover:bg-zinc-800 rounded transition-all duration-200"><X size={20} /></button>
+                </div>
+                <div className="p-4 space-y-4 pb-6">
+                  <input
+                    type="text"
+                    placeholder="Event title"
+                    value={eventForm.title}
+                    onChange={e => setEventForm({...eventForm, title: e.target.value})}
+                    autoFocus
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none"
+                  />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm text-zinc-400 block mb-1">Start</label>
+                      <input type="time" value={eventForm.startTime} onChange={e => setEventForm({...eventForm, startTime: e.target.value})} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                    <div>
+                      <label className="text-sm text-zinc-400 block mb-1">End</label>
+                      <input type="time" value={eventForm.endTime} onChange={e => setEventForm({...eventForm, endTime: e.target.value})} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-sm text-zinc-400 block mb-2">Color</label>
+                    <div className="grid grid-cols-4 gap-2">
+                      {Object.keys(colors).map(c => (
+                        <button key={c} onClick={() => setEventForm({...eventForm, color: c})} className={`h-12 rounded-lg transition-all duration-200 hover:scale-105 ${eventForm.color === c ? 'ring-2 ring-white' : ''}`} style={{
+                          background: `repeating-linear-gradient(45deg, ${colors[c].base}, ${colors[c].base} 10px, ${colors[c].light} 10px, ${colors[c].light} 20px)`
+                        }} />
+                      ))}
+                    </div>
+                  </div>
+                  <textarea 
+                    placeholder="Description" 
+                    value={eventForm.description} 
+                    onChange={e => setEventForm({...eventForm, description: e.target.value})} 
+                    className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 h-24 resize-none text-white transition-all duration-200 focus:border-blue-500 focus:outline-none"
+                  />
+                  <div className="border-t border-zinc-700 pt-4">
+                    <label className="flex items-center gap-3 cursor-pointer">
+                      <div className="relative" onClick={() => setEventForm({...eventForm, recurring: !eventForm.recurring})}>
+                        <div className={`w-11 h-6 rounded-full transition-all duration-300 ${eventForm.recurring ? 'bg-green-600' : 'bg-zinc-700'}`}></div>
+                        <div className={`absolute left-1 top-1 w-4 h-4 bg-white rounded-full transition-all duration-300 ${eventForm.recurring ? 'translate-x-5' : ''}`}></div>
+                      </div>
+                      <span className="text-sm font-medium">Recurring</span>
+                    </label>
+                    {eventForm.recurring && (
+                      <div className="mt-4 space-y-4 bg-zinc-800/50 p-4 rounded-lg fade-in">
+                        <select value={eventForm.recurrence.frequency} onChange={e => setEventForm({...eventForm, recurrence: {...eventForm.recurrence, frequency: e.target.value}})} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none">
+                          <option value="daily">Daily</option>
+                          <option value="weekly">Weekly</option>
+                        </select>
+                        <div className="flex items-center gap-2">
+                          <input type="number" min="1" value={eventForm.recurrence.interval} onChange={e => setEventForm({...eventForm, recurrence: {...eventForm.recurrence, interval: parseInt(e.target.value) || 1}})} className="w-20 bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none" />
+                          <span className="text-sm">{eventForm.recurrence.frequency === 'daily' ? 'day(s)' : 'week(s)'}</span>
+                        </div>
+                        {eventForm.recurrence.frequency === 'weekly' && (
+                          <div className="grid grid-cols-7 gap-1">
+                            {['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'].map(d => (
+                              <button key={d} onClick={() => {
+                                const days = eventForm.recurrence.daysOfWeek.includes(d) ? eventForm.recurrence.daysOfWeek.filter(x => x !== d) : [...eventForm.recurrence.daysOfWeek, d];
+                                setEventForm({...eventForm, recurrence: {...eventForm.recurrence, daysOfWeek: days}});
+                              }} className={`py-2 rounded text-xs transition-all duration-200 ${eventForm.recurrence.daysOfWeek.includes(d) ? 'bg-green-600 text-white' : 'bg-zinc-800 text-zinc-400'}`}>
+                                {d[0].toUpperCase()}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        <input type="date" value={eventForm.recurrence.endDate || ''} onChange={e => setEventForm({...eventForm, recurrence: {...eventForm.recurrence, endDate: e.target.value || null}})} className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-4 py-2 text-white transition-all duration-200 focus:border-blue-500 focus:outline-none" />
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={handleSaveEvent} className="w-full bg-zinc-700 hover:bg-zinc-600 rounded-lg py-3 font-semibold transition-all duration-200">{editingEvent ? 'Update' : 'Create'}</button>
+                  {editingEvent && (
+                    <button onClick={(e) => { handleDeleteEvent(editingEvent.id, e); setShowEventModal(false); }} className="w-full bg-red-600 hover:bg-red-700 rounded-lg py-3 font-semibold transition-all duration-200">Delete Event</button>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<CalendarApp />, document.getElementById('root'));
+  </script>
+</body>
+</html>
